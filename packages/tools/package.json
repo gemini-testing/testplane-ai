@@ -2,7 +2,7 @@
   "name": "@testplane/tools",
   "version": "0.0.0",
   "private": true,
-  "description": "Testplane MCP tools — browser automation tool implementations",
+  "description": "Testplane MCP tools — browser automation tools implementation",
   "type": "module",
   "main": "build/index.js",
   "types": "build/index.d.ts",
