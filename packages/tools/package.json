@@ -2,7 +2,7 @@
   "name": "@testplane/tools",
   "version": "0.0.0",
   "private": true,
-  "description": "Testplane MCP tools — browser automation tool implementations",
+  "description": "Testplane MCP tools — browser automation tools implementation",
   "type": "module",
   "main": "build/index.js",
   "types": "build/index.d.ts",
@@ -32,9 +32,9 @@
     "@rrweb/types": "^2.0.0-alpha.18",
     "acorn": "^8.16.0",
     "fflate": "^0.8.2",
-    "html-reporter": "^11.10.0-rc.2",
+    "html-reporter": "11.11.0",
     "lodash.escaperegexp": "^4.1.2",
-    "testplane": "^8.47.1",
+    "testplane": "8.47.1",
     "zod": "^3.22.4"
   },
   "devDependencies": {
