@@ -14,6 +14,7 @@ import {
     loadRrwebSnapshotArchive,
     resolveSnapshotAttachmentSource,
     resolveTargetTime,
+    resolveViewportSizeAt,
     timeTravelExportHtml,
     timeTravelExportHtmlObjectSchema,
     timeTravelSnapshot,
@@ -111,6 +112,13 @@ describe("tools/time-travel-snapshot", () => {
             requestedKind: "offset",
             wasClamped: false,
         });
+        expect(resolveViewportSizeAt(archive, offsetTime)).toMatchObject({
+            width: 1280,
+            height: 1024,
+            source: "meta",
+            timestamp: 1778522879037,
+            offsetMs: 134,
+        });
 
         const timestampTime = resolveTargetTime(archive.metadata, { time: 1778522879143 });
         expect(timestampTime).toMatchObject({
@@ -127,6 +135,60 @@ describe("tools/time-travel-snapshot", () => {
             requestedKind: "timestamp",
             wasClamped: true,
         });
+    });
+
+    it("resolves viewport size from the latest resize event at the selected time", () => {
+        const archive = {
+            source: "synthetic",
+            events: [
+                { type: 4, timestamp: 1010, data: { width: 800, height: 600 }, seqNo: 0 },
+                { type: 3, timestamp: 1100, data: { source: 4, width: 1024, height: 768 }, seqNo: 1 },
+                { type: 3, timestamp: 1300, data: { source: 4, width: 1200, height: 900 }, seqNo: 2 },
+            ] as never,
+            metadata: {
+                startTime: 1000,
+                endTime: 1400,
+                totalTime: 400,
+                width: 800,
+                height: 600,
+            },
+        };
+
+        expect(resolveViewportSizeAt(archive, resolveTargetTime(archive.metadata, { time: 0 }))).toMatchObject({
+            width: 800,
+            height: 600,
+            source: "meta",
+            timestamp: 1010,
+            offsetMs: 10,
+        });
+        expect(resolveViewportSizeAt(archive, resolveTargetTime(archive.metadata, { time: 150 }))).toMatchObject({
+            width: 1024,
+            height: 768,
+            source: "resize",
+            timestamp: 1100,
+            offsetMs: 100,
+        });
+        expect(resolveViewportSizeAt(archive, resolveTargetTime(archive.metadata, { time: 350 }))).toMatchObject({
+            width: 1200,
+            height: 900,
+            source: "resize",
+            timestamp: 1300,
+            offsetMs: 300,
+        });
+    });
+
+    it("returns null when no rrweb viewport size data is available", () => {
+        const archive = {
+            source: "synthetic",
+            events: [{ type: 3, timestamp: 1000, data: { source: 0 }, seqNo: 0 }] as never,
+            metadata: {
+                startTime: 1000,
+                endTime: 1000,
+                totalTime: 0,
+            },
+        };
+
+        expect(resolveViewportSizeAt(archive, resolveTargetTime(archive.metadata, { time: 0 }))).toBeNull();
     });
 
     it("selects report attempts, resolves snapshot attachments, and picks default times", async () => {
@@ -378,6 +440,9 @@ describe("tools/time-travel-snapshot", () => {
         expect(text).toContain("Time travel snapshot captured");
         expect(text).toContain("## Selected Time");
         expect(text).toContain("Reason: provided offset 134ms from first rrweb event");
+        expect(text).toContain("## Browser Window");
+        expect(text).toContain("Viewport size: 1280x1024");
+        expect(text).toContain("Source: initial rrweb meta event at +134ms");
         expect(text).toContain("Some header");
         expect(text).toContain("Lorem ipsum dolor sit amet");
     }, 30_000);
@@ -393,6 +458,8 @@ describe("tools/time-travel-snapshot", () => {
 
         expect(result.isError).toBe(false);
         expect(text).toContain("Time travel HTML exported");
+        expect(text).toContain("## Browser Window");
+        expect(text).toContain("Viewport size: 1280x1024");
         expect(text).toContain(".testplane/time-travel-snapshots");
         expect(text).toContain("Contains rrweb-reconstructed HTML plus captured inline CSS");
 

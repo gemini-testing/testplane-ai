@@ -1,5 +1,5 @@
 import { ReporterTestResult } from "html-reporter/experimental/sdk";
-import { TimeTravelArchive } from "./rrweb-snapshots.js";
+import { resolveViewportSizeAt, type TimeTravelArchive, type TimeTravelViewportSize } from "./rrweb-snapshots.js";
 import type { TimeTravelSnapshotArgs } from "./schema.js";
 import { ReporterTestStep, SelectedSnapshotTime, SnapshotInputSelection } from "./types.js";
 import { formatTimestamp } from "../../utils/formatters.js";
@@ -107,6 +107,23 @@ export function formatSourceInfo(
     return lines.join("\n");
 }
 
+function formatViewportSource(viewport: TimeTravelViewportSize): string {
+    const offset = formatOffset(Math.round(viewport.offsetMs));
+
+    return viewport.source === "resize"
+        ? `Source: rrweb viewport resize event at ${offset}`
+        : `Source: initial rrweb meta event at ${offset}`;
+}
+
+export function formatBrowserWindow(archive: TimeTravelArchive, selectedTime: SelectedSnapshotTime): string {
+    const viewport = resolveViewportSizeAt(archive, selectedTime);
+    if (!viewport) {
+        return "Viewport size: unknown";
+    }
+
+    return [`Viewport size: ${viewport.width}x${viewport.height}`, formatViewportSource(viewport)].join("\n");
+}
+
 export function formatResponse(
     args: TimeTravelSnapshotArgs,
     input: SnapshotInputSelection,
@@ -121,6 +138,8 @@ export function formatResponse(
         formatSourceInfo(args, input, archive),
         "## Selected Time",
         formatSelectedTime(selectedTime),
+        "## Browser Window",
+        formatBrowserWindow(archive, selectedTime),
     ];
 
     if (diffFromTime) {

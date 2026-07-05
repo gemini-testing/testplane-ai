@@ -7,7 +7,7 @@ import { createErrorResponse, createSimpleResponse } from "../../responses/index
 import { StandaloneTool, ToolKind } from "../../types.js";
 import { formatFileSize, formatTimestamp } from "../../utils/formatters.js";
 import { loadTimeTravelArchive, resolveTargetTime, type TimeTravelArchive } from "./rrweb-snapshots.js";
-import { formatReportTestSteps, formatSelectedTime, formatSourceInfo } from "./formatters.js";
+import { formatBrowserWindow, formatReportTestSteps, formatSelectedTime, formatSourceInfo } from "./formatters.js";
 import { getSnapshotInput, withRenderedTimeTravelFrame } from "./rendered-frame.js";
 import { timeTravelSelectionSchema, validateTimeTravelSelection } from "./schema.js";
 import type { SelectedSnapshotTime, SnapshotInputSelection } from "./types.js";
@@ -65,6 +65,8 @@ function formatResponse(
         formatSourceInfo(args, input, archive),
         "## Selected Time",
         formatSelectedTime(selectedTime),
+        "## Browser Window",
+        formatBrowserWindow(archive, selectedTime),
     ];
 
     if (input.result) {

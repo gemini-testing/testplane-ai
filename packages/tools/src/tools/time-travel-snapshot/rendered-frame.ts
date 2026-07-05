@@ -2,7 +2,7 @@ import { readResultsFromReport } from "html-reporter/experimental/sdk";
 import type { WdioBrowser } from "testplane";
 import { downloadReportIfNeeded } from "../../utils/html-report.js";
 import { launchBrowserWithOptions } from "../launch-browser.js";
-import type { TimeTravelArchive } from "./rrweb-snapshots.js";
+import { resolveViewportSizeAt, type TimeTravelArchive } from "./rrweb-snapshots.js";
 import {
     findReportTestResult,
     getReportDefaultTime,
@@ -48,10 +48,15 @@ export async function getSnapshotInput(args: TimeTravelInputArgs): Promise<Snaps
     };
 }
 
-function getWindowSize(archive: TimeTravelArchive): { width: number; height: number } {
+function getWindowSize(
+    archive: TimeTravelArchive,
+    selectedTime: SelectedSnapshotTime,
+): { width: number; height: number } {
+    const viewport = resolveViewportSizeAt(archive, selectedTime);
+
     return {
-        width: Math.min(Math.max(Math.ceil(archive.metadata.width ?? 1280), 800), 1920),
-        height: Math.min(Math.max(Math.ceil(archive.metadata.height ?? 720), 600), 1080),
+        width: Math.min(Math.max(Math.ceil(viewport?.width ?? archive.metadata.width ?? 1280), 800), 1920),
+        height: Math.min(Math.max(Math.ceil(viewport?.height ?? archive.metadata.height ?? 720), 600), 1080),
     };
 }
 
@@ -97,7 +102,7 @@ export async function withRenderedTimeTravelFrame<T>(
         server = await startTimeTravelRenderServer(archive.events, selectedTime.offsetMs);
         browser = await launchBrowserWithOptions({
             headless: true,
-            windowSize: getWindowSize(archive),
+            windowSize: getWindowSize(archive, selectedTime),
         });
 
         await browser.openAndWait(server.url, { ignoreNetworkErrorsPatterns: [/.*/], timeout: RENDER_TIMEOUT_MS });

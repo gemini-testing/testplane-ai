@@ -15,7 +15,11 @@ import { formatResponse } from "./formatters.js";
 
 export { timeTravelExportHtml, timeTravelExportHtmlObjectSchema, timeTravelExportHtmlSchema } from "./export-html.js";
 export { timeTravelSnapshotObjectSchema, timeTravelSnapshotSchema } from "./schema.js";
-export { loadTimeTravelArchive as loadRrwebSnapshotArchive, resolveTargetTime } from "./rrweb-snapshots.js";
+export {
+    loadTimeTravelArchive as loadRrwebSnapshotArchive,
+    resolveTargetTime,
+    resolveViewportSizeAt,
+} from "./rrweb-snapshots.js";
 export {
     findReportTestResult,
     getReportDefaultTime,
