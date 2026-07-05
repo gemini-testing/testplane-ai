@@ -26,6 +26,7 @@ const EXPECTED_TOOL_NAMES = [
     "test-results",
     "inspect-result",
     "time-travel-snapshot",
+    "time-travel-export-html",
     // session tools
     "launch",
     "attach",

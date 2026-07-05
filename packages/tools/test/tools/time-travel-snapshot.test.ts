@@ -1,3 +1,5 @@
+import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { readResultsFromReport } from "html-reporter/experimental/sdk";
@@ -12,6 +14,8 @@ import {
     loadRrwebSnapshotArchive,
     resolveSnapshotAttachmentSource,
     resolveTargetTime,
+    timeTravelExportHtml,
+    timeTravelExportHtmlObjectSchema,
     timeTravelSnapshot,
     timeTravelSnapshotObjectSchema,
 } from "../../src/tools/time-travel-snapshot/index.js";
@@ -22,9 +26,21 @@ const SAMPLE_REPORT = fileURLToPath(new URL("../fixtures/sample-html-report", im
 const SAMPLE_SNAPSHOT = path.join(SAMPLE_REPORT, "snapshots/2570334/chrome_1778522878896_1.zip");
 
 type TimeTravelSnapshotInput = z.input<typeof timeTravelSnapshotObjectSchema>;
+type TimeTravelExportHtmlInput = z.input<typeof timeTravelExportHtmlObjectSchema>;
 
 function parseArgs(args: TimeTravelSnapshotInput) {
     return timeTravelSnapshotObjectSchema.parse(args);
+}
+
+function parseExportHtmlArgs(args: TimeTravelExportHtmlInput) {
+    return timeTravelExportHtmlObjectSchema.parse(args);
+}
+
+function extractSavedHtmlPath(responseText: string): string {
+    const match = responseText.match(/Saved to: (.+\.html)/);
+    if (!match) throw new Error(`No saved HTML path found in response:\n${responseText}`);
+
+    return match[1];
 }
 
 describe("tools/time-travel-snapshot", () => {
@@ -61,6 +77,19 @@ describe("tools/time-travel-snapshot", () => {
                 .success,
         ).toBe(false);
         expect(timeTravelSnapshotObjectSchema.safeParse({ report: SAMPLE_REPORT, name: "test" }).success).toBe(false);
+
+        expect(timeTravelExportHtmlObjectSchema.safeParse({ snapshotFile: SAMPLE_SNAPSHOT, time: 134 }).success).toBe(
+            true,
+        );
+        expect(
+            timeTravelExportHtmlObjectSchema.safeParse({
+                report: SAMPLE_REPORT,
+                name: "success describe successfully passed test",
+                browser: "chrome",
+                filePath: path.join(os.tmpdir(), "snapshot.html"),
+            }).success,
+        ).toBe(true);
+        expect(timeTravelExportHtmlObjectSchema.safeParse({ snapshotFile: SAMPLE_SNAPSHOT }).success).toBe(false);
     });
 
     it("loads rrweb snapshot archives and resolves smart time values", async () => {
@@ -351,5 +380,57 @@ describe("tools/time-travel-snapshot", () => {
         expect(text).toContain("Reason: provided offset 134ms from first rrweb event");
         expect(text).toContain("Some header");
         expect(text).toContain("Lorem ipsum dolor sit amet");
+    }, 30_000);
+
+    it("exports the rrweb iframe HTML to the default tmp path", async () => {
+        const result = await timeTravelExportHtml.cb(
+            parseExportHtmlArgs({
+                snapshotFile: SAMPLE_SNAPSHOT,
+                time: 134,
+            }),
+        );
+        const text = getTextContent(result);
+
+        expect(result.isError).toBe(false);
+        expect(text).toContain("Time travel HTML exported");
+        expect(text).toContain(".testplane/time-travel-snapshots");
+        expect(text).toContain("Contains rrweb-reconstructed HTML plus captured inline CSS");
+
+        const htmlPath = extractSavedHtmlPath(text);
+        const html = await fs.readFile(htmlPath, "utf8");
+
+        expect(html).toContain("<!doctype html>");
+        expect(html).toContain("Some header");
+        expect(html).toContain("Lorem ipsum dolor sit amet");
+        expect(html).toContain(".text {");
+        expect(html).not.toContain("__timeTravelReplayer");
+        expect(html).not.toContain('data-time-travel-target="true"');
+
+        await fs.unlink(htmlPath).catch(() => {});
+    }, 30_000);
+
+    it("exports the rrweb iframe HTML to a custom file path", async () => {
+        const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "testplane-time-travel-export-"));
+        const filePath = path.join(tmpDir, "nested", "snapshot.html");
+
+        try {
+            const result = await timeTravelExportHtml.cb(
+                parseExportHtmlArgs({
+                    snapshotFile: SAMPLE_SNAPSHOT,
+                    time: 134,
+                    filePath,
+                }),
+            );
+            const text = getTextContent(result);
+
+            expect(result.isError).toBe(false);
+            expect(text).toContain(`Saved to: ${filePath}`);
+
+            const html = await fs.readFile(filePath, "utf8");
+            expect(html).toContain("Some header");
+            expect(html).toContain(".text {");
+        } finally {
+            await fs.rm(tmpDir, { recursive: true, force: true });
+        }
     }, 30_000);
 });

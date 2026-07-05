@@ -1,5 +1,3 @@
-import { readResultsFromReport } from "html-reporter/experimental/sdk";
-import type { WdioBrowser } from "testplane";
 import { createErrorResponse, createSimpleResponse } from "../../responses/index.js";
 import {
     type CaptureSnapshotOptions,
@@ -8,21 +6,14 @@ import {
     convertSnapshotToResponse,
 } from "../../responses/browser-helpers.js";
 import { StandaloneTool, ToolKind } from "../../types.js";
-import { downloadReportIfNeeded } from "../../utils/html-report.js";
-import { launchBrowserWithOptions } from "../launch-browser.js";
-import { loadTimeTravelArchive, type TimeTravelArchive, resolveTargetTime } from "./rrweb-snapshots.js";
-import {
-    findReportTestResult,
-    getReportDefaultTime,
-    getSnapshotAttachment,
-    resolveSnapshotAttachmentSource,
-} from "./report.js";
-import { startTimeTravelRenderServer, type TimeTravelRenderServer } from "./render-server.js";
+import { loadTimeTravelArchive, resolveTargetTime, type TimeTravelArchive } from "./rrweb-snapshots.js";
+import { getSnapshotInput, withRenderedTimeTravelFrame } from "./rendered-frame.js";
 import { timeTravelSnapshotObjectSchema, timeTravelSnapshotSchema, type TimeTravelSnapshotArgs } from "./schema.js";
 import { diffPageSnapshots } from "./snapshot-diff.js";
-import { SelectedSnapshotTime, SnapshotInputSelection } from "./types.js";
+import { SelectedSnapshotTime } from "./types.js";
 import { formatResponse } from "./formatters.js";
 
+export { timeTravelExportHtml, timeTravelExportHtmlObjectSchema, timeTravelExportHtmlSchema } from "./export-html.js";
 export { timeTravelSnapshotObjectSchema, timeTravelSnapshotSchema } from "./schema.js";
 export { loadTimeTravelArchive as loadRrwebSnapshotArchive, resolveTargetTime } from "./rrweb-snapshots.js";
 export {
@@ -32,8 +23,6 @@ export {
     resolveSnapshotAttachmentSource,
 } from "./report.js";
 export { diffPageSnapshots } from "./snapshot-diff.js";
-
-const RENDER_TIMEOUT_MS = 15_000;
 
 function getSnapshotOptions(args: TimeTravelSnapshotArgs): CaptureSnapshotOptions {
     return {
@@ -46,120 +35,19 @@ function getSnapshotOptions(args: TimeTravelSnapshotArgs): CaptureSnapshotOption
     };
 }
 
-async function getSnapshotInput(args: TimeTravelSnapshotArgs): Promise<SnapshotInputSelection> {
-    if (args.snapshotFile) {
-        return {
-            mode: "direct",
-            source: args.snapshotFile,
-        };
-    }
-
-    const reportPath = await downloadReportIfNeeded(args.report!);
-    const results = await readResultsFromReport(reportPath);
-    const result = findReportTestResult(results, {
-        name: args.name!,
-        browser: args.browser!,
-        attempt: args.attempt,
-    });
-    const attachment = getSnapshotAttachment(result);
-    const source = await resolveSnapshotAttachmentSource(args.report!, reportPath, attachment.path);
-
-    return {
-        mode: "report",
-        source,
-        result,
-        defaultTime: getReportDefaultTime(result),
-    };
-}
-
-function getWindowSize(archive: TimeTravelArchive): { width: number; height: number } {
-    return {
-        width: Math.min(Math.max(Math.ceil(archive.metadata.width ?? 1280), 800), 1920),
-        height: Math.min(Math.max(Math.ceil(archive.metadata.height ?? 720), 600), 1080),
-    };
-}
-
-async function waitForRender(browser: WdioBrowser): Promise<void> {
-    let renderError: string | undefined;
-
-    await browser.waitUntil(
-        async () => {
-            const status = (await browser.execute(() => {
-                const root = document.documentElement;
-
-                return {
-                    ready: root.dataset.timeTravelReady === "true",
-                    error: root.dataset.timeTravelError,
-                };
-            })) as { ready: boolean; error?: string };
-
-            renderError = status.error;
-
-            return status.ready || Boolean(status.error);
-        },
-        {
-            timeout: RENDER_TIMEOUT_MS,
-            interval: 100,
-            timeoutMsg: `Time travel snapshot renderer did not become ready within ${RENDER_TIMEOUT_MS}ms.`,
-        },
-    );
-
-    if (renderError) {
-        throw new Error(`Time travel snapshot renderer failed: ${renderError}`);
-    }
-}
-
 async function captureRenderedSnapshot(
     archive: TimeTravelArchive,
     selectedTime: SelectedSnapshotTime,
     snapshotOptions: CaptureSnapshotOptions,
 ): Promise<PageSnapshotResult> {
-    let server: TimeTravelRenderServer | null = null;
-    let browser: WdioBrowser | null = null;
-
-    try {
-        server = await startTimeTravelRenderServer(archive.events, selectedTime.offsetMs);
-        browser = await launchBrowserWithOptions({
-            headless: true,
-            windowSize: getWindowSize(archive),
-        });
-
-        await browser.openAndWait(server.url, { ignoreNetworkErrorsPatterns: [/.*/], timeout: RENDER_TIMEOUT_MS });
-        await waitForRender(browser);
-
-        const iframe = await browser.$('iframe[data-time-travel-target="true"]');
-        await iframe.waitForExist({ timeout: 5_000 });
-        await browser.switchFrame(iframe);
-
+    return withRenderedTimeTravelFrame(archive, selectedTime, async browser => {
         const snapshot = await getPageSnapshot(browser, snapshotOptions);
         if (!snapshot) {
             throw new Error("Failed to capture DOM snapshot from rrweb iframe.");
         }
 
         return snapshot;
-    } finally {
-        if (browser) {
-            try {
-                await browser.switchFrame(null);
-            } catch {
-                // The browser may already be closed or not inside a frame.
-            }
-
-            try {
-                await browser.deleteSession();
-            } catch (error) {
-                console.error("Error closing time travel snapshot browser:", error);
-            }
-        }
-
-        if (server) {
-            try {
-                await server.close();
-            } catch (error) {
-                console.error("Error closing time travel snapshot render server:", error);
-            }
-        }
-    }
+    });
 }
 
 const timeTravelSnapshotCb: StandaloneTool<typeof timeTravelSnapshotSchema>["cb"] = async rawArgs => {
