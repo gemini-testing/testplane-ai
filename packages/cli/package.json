@@ -25,12 +25,12 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@testplane/testing-library": "^1.0.5",
     "@rrweb/replay": "^2.0.0-alpha.18",
+    "@testplane/testing-library": "^1.0.5",
     "commander": "^14.0.3",
     "debug": "^4.3.4",
     "html-reporter": "11.11.0",
-    "testplane": "8.47.1",
+    "testplane": "9.0.9",
     "zod": "^3.22.4"
   },
   "devDependencies": {
