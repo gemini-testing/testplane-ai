@@ -12,13 +12,32 @@ export interface ReplConnectionOptions {
 }
 
 interface PendingEvaluation {
+    kind: "evaluation";
     startMarker: string;
     endMarker: string;
+    resultReady: boolean;
+    result?: unknown;
     timeout: NodeJS.Timeout;
     resolve: (result: unknown) => void;
     reject: (error: Error) => void;
     parse: (payload: string, outputBeforePayload: string) => unknown;
 }
+
+type ReplPrompt = "primary" | "continuation";
+
+interface ReplPromptResult {
+    output: string;
+    prompt: ReplPrompt;
+}
+
+interface PendingPrompt {
+    kind: "prompt";
+    timeout: NodeJS.Timeout;
+    resolve: (result: ReplPromptResult) => void;
+    reject: (error: Error) => void;
+}
+
+type PendingRequest = PendingEvaluation | PendingPrompt;
 
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_CONNECT_TIMEOUT_MS = 5_000;
@@ -140,7 +159,7 @@ export class ReplConnection {
     private _socket: net.Socket | null = null;
     private _connectPromise: Promise<void> | null = null;
     private _buffer = "";
-    private _pending: PendingEvaluation | null = null;
+    private _pending: PendingRequest | null = null;
     private _sendQueue: Promise<void> = Promise.resolve();
 
     constructor(options: ReplConnectionOptions) {
@@ -275,8 +294,10 @@ export class ReplConnection {
             }, this._evaluateTimeoutMs);
 
             this._pending = {
+                kind: "evaluation",
                 startMarker,
                 endMarker,
+                resultReady: false,
                 timeout,
                 resolve: result => resolve(result as EvaluateResult),
                 reject,
@@ -301,30 +322,41 @@ export class ReplConnection {
         return this._sendRawCommand(socket, code, code);
     }
 
-    private _sendRawCommand(socket: net.Socket, code: string, timeoutDescription: string): Promise<string> {
-        const id = randomUUID();
-        const startMarker = `__TESTPLANE_MCP_RAW_RESULT_${id}__`;
-        const endMarker = `__TESTPLANE_MCP_RAW_END_${id}__`;
-        const markerCommand = this._createRawCompletionMarkerCommand(startMarker, endMarker);
-        const command = `${code.endsWith("\n") ? code : `${code}\n`}${markerCommand}`;
+    private async _sendRawCommand(socket: net.Socket, code: string, timeoutDescription: string): Promise<string> {
+        const lines = splitReplLines(code);
+        const output: string[] = [];
 
-        return new Promise((resolve, reject) => {
+        // The REPL may process a later input line while a top-level await is still pending.
+        // Submit each physical line only after the preceding prompt has arrived.
+        for (let index = 0; index < lines.length; index++) {
+            const result = await this._sendRawLine(socket, lines[index], timeoutDescription);
+            output.push(result.output);
+
+            if (index === lines.length - 1 && result.prompt === "continuation") {
+                await this._sendRawLine(socket, ".break", "clearing incomplete REPL input");
+                throw new Error(`Testplane REPL requested more input after the end of: ${timeoutDescription}`);
+            }
+        }
+
+        return normalizeReplOutput(output.join(""));
+    }
+
+    private _sendRawLine(socket: net.Socket, line: string, timeoutDescription: string): Promise<ReplPromptResult> {
+        return new Promise<ReplPromptResult>((resolve, reject) => {
             const timeout = setTimeout(() => {
                 this._pending = null;
-                reject(new Error(`Timed out waiting for Testplane REPL command to finish for: ${timeoutDescription}`));
+                reject(new Error(`Timed out waiting for Testplane REPL prompt while running: ${timeoutDescription}`));
             }, this._evaluateTimeoutMs);
 
             this._buffer = "";
             this._pending = {
-                startMarker,
-                endMarker,
+                kind: "prompt",
                 timeout,
-                resolve: result => resolve(result as string),
+                resolve,
                 reject,
-                parse: (_payload, outputBeforePayload) => stripReplPrompts(outputBeforePayload),
             };
 
-            socket.write(command);
+            socket.write(`${line}\n`);
             this._tryResolvePending();
         });
     }
@@ -335,10 +367,6 @@ export class ReplConnection {
 
     private _createBrowserFallbackCommand(): string {
         return `void eval(${serializeFunctionExpression(installBrowserFallback)}).call(this)\n`;
-    }
-
-    private _createRawCompletionMarkerCommand(startMarker: string, endMarker: string): string {
-        return `({ [Symbol.for("nodejs.util.inspect.custom")]: () => ${JSON.stringify(startMarker + endMarker)} })\n`;
     }
 
     private _onData(data: string): void {
@@ -352,28 +380,56 @@ export class ReplConnection {
             return;
         }
 
-        const startIndex = this._buffer.indexOf(pending.startMarker);
-        if (startIndex === -1) {
+        if (pending.kind === "prompt") {
+            const result = findTrailingReplPrompt(this._buffer);
+            if (!result) {
+                return;
+            }
+
+            const output = this._buffer.slice(0, result.index);
+            this._buffer = this._buffer.slice(result.index + result.length);
+            this._pending = null;
+            clearTimeout(pending.timeout);
+            pending.resolve({ output, prompt: result.prompt });
             return;
         }
 
-        const payloadStart = startIndex + pending.startMarker.length;
-        const endIndex = this._buffer.indexOf(pending.endMarker, payloadStart);
-        if (endIndex === -1) {
+        if (!pending.resultReady) {
+            const startIndex = this._buffer.indexOf(pending.startMarker);
+            if (startIndex === -1) {
+                return;
+            }
+
+            const payloadStart = startIndex + pending.startMarker.length;
+            const endIndex = this._buffer.indexOf(pending.endMarker, payloadStart);
+            if (endIndex === -1) {
+                return;
+            }
+
+            const outputBeforePayload = this._buffer.slice(0, startIndex);
+            const payload = this._buffer.slice(payloadStart, endIndex).trim();
+            this._buffer = this._buffer.slice(endIndex + pending.endMarker.length);
+
+            try {
+                pending.result = pending.parse(payload, outputBeforePayload);
+                pending.resultReady = true;
+            } catch (error) {
+                this._pending = null;
+                clearTimeout(pending.timeout);
+                pending.reject(error instanceof Error ? error : new Error(String(error)));
+                return;
+            }
+        }
+
+        const prompt = findTrailingReplPrompt(this._buffer);
+        if (!prompt || prompt.prompt !== "primary") {
             return;
         }
 
-        const outputBeforePayload = this._buffer.slice(0, startIndex);
-        const payload = this._buffer.slice(payloadStart, endIndex).trim();
-        this._buffer = this._buffer.slice(endIndex + pending.endMarker.length);
+        this._buffer = this._buffer.slice(prompt.index + prompt.length);
         this._pending = null;
         clearTimeout(pending.timeout);
-
-        try {
-            pending.resolve(pending.parse(payload, outputBeforePayload));
-        } catch (error) {
-            pending.reject(error instanceof Error ? error : new Error(String(error)));
-        }
+        pending.resolve(pending.result);
     }
 
     private _rejectPending(error: Error): void {
@@ -388,11 +444,41 @@ export class ReplConnection {
     }
 }
 
-function stripReplPrompts(output: string): string {
-    const lines = stripVTControlCharacters(output)
-        .replace(/\r\n/g, "\n")
-        .split("\n")
-        .map(line => line.replace(/^(?:> |\.\.\. )+/, ""));
+function splitReplLines(source: string): string[] {
+    const normalized = source.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+    const lines = normalized.split("\n");
+
+    if (lines.length > 1 && lines[lines.length - 1] === "") {
+        lines.pop();
+    }
+
+    return lines;
+}
+
+function findTrailingReplPrompt(buffer: string): { index: number; length: number; prompt: ReplPrompt } | undefined {
+    const prompts: Array<{ value: string; prompt: ReplPrompt }> = [
+        { value: "... ", prompt: "continuation" },
+        { value: "> ", prompt: "primary" },
+    ];
+
+    for (const candidate of prompts) {
+        if (!buffer.endsWith(candidate.value)) {
+            continue;
+        }
+
+        // Prompts share a stream with user output, so only accept a prompt-shaped suffix
+        // at a line boundary. This is intentionally best-effort rather than collision-proof.
+        const index = buffer.length - candidate.value.length;
+        if (index === 0 || buffer[index - 1] === "\n") {
+            return { index, length: candidate.value.length, prompt: candidate.prompt };
+        }
+    }
+
+    return undefined;
+}
+
+function normalizeReplOutput(output: string): string {
+    const lines = stripVTControlCharacters(output).replace(/\r\n/g, "\n").split("\n");
 
     while (lines.length > 0 && lines[0].trim() === "") {
         lines.shift();
