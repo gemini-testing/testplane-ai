@@ -27,14 +27,14 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@testplane/testing-library": "^1.0.5",
     "@rrweb/replay": "^2.0.0-alpha.18",
     "@rrweb/types": "^2.0.0-alpha.18",
+    "@testplane/testing-library": "^1.0.5",
     "acorn": "^8.16.0",
     "fflate": "^0.8.2",
     "html-reporter": "11.11.0",
     "lodash.escaperegexp": "^4.1.2",
-    "testplane": "8.47.1",
+    "testplane": "9.0.9",
     "zod": "^3.22.4"
   },
   "devDependencies": {
