@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { unzipSync } from "fflate";
-import type { eventWithTime as RrwebEvent } from "@rrweb/types";
+import { type eventWithTime as RrwebEvent, IncrementalSource } from "@rrweb/types";
 import { SelectedSnapshotTime } from "./types.js";
 
 export type NumberedRrwebEvent = RrwebEvent & { seqNo: number };
@@ -26,7 +26,17 @@ export interface ResolveTargetTimeOptions {
     defaultReason?: string;
 }
 
+export interface TimeTravelViewportSize {
+    width: number;
+    height: number;
+    source: "meta" | "resize";
+    timestamp: number;
+    offsetMs: number;
+}
+
 const SNAPSHOTS_FILE_NAME = "snapshots.json";
+const RRWEB_INCREMENTAL_SNAPSHOT_EVENT = 3;
+const RRWEB_META_EVENT = 4;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -69,13 +79,67 @@ async function readTimeTravelZip(source: string): Promise<Uint8Array> {
     return new Uint8Array(await readFile(sourceToLocalPath(source)));
 }
 
+function getViewportSizeData(data: unknown): Pick<TimeTravelViewportSize, "width" | "height"> | null {
+    if (!isRecord(data) || typeof data.width !== "number" || typeof data.height !== "number") {
+        return null;
+    }
+
+    return {
+        width: data.width,
+        height: data.height,
+    };
+}
+
 function getViewportMetadata(events: readonly NumberedRrwebEvent[]): Pick<RrwebSnapshotMetadata, "width" | "height"> {
-    const metaEvent = events.find(event => event.type === 4 && isRecord(event.data));
-    const data = isRecord(metaEvent?.data) ? metaEvent.data : undefined;
-    const width = typeof data?.width === "number" ? data.width : undefined;
-    const height = typeof data?.height === "number" ? data.height : undefined;
+    const metaEvent = events.find(event => event.type === RRWEB_META_EVENT);
+    const size = getViewportSizeData(metaEvent?.data);
+    const width = size?.width;
+    const height = size?.height;
 
     return { width, height };
+}
+
+export function resolveViewportSizeAt(
+    archive: TimeTravelArchive,
+    selectedTime: SelectedSnapshotTime,
+): TimeTravelViewportSize | null {
+    let viewport: TimeTravelViewportSize | null = null;
+
+    for (const event of archive.events) {
+        if (event.type === RRWEB_META_EVENT && viewport === null) {
+            const size = getViewportSizeData(event.data);
+            if (size) {
+                viewport = {
+                    ...size,
+                    source: "meta",
+                    timestamp: event.timestamp,
+                    offsetMs: event.timestamp - archive.metadata.startTime,
+                };
+            }
+            continue;
+        }
+
+        if (event.timestamp > selectedTime.absoluteTime || event.type !== RRWEB_INCREMENTAL_SNAPSHOT_EVENT) {
+            continue;
+        }
+
+        const data = isRecord(event.data) ? event.data : undefined;
+        if (data?.source !== IncrementalSource.ViewportResize) {
+            continue;
+        }
+
+        const size = getViewportSizeData(data);
+        if (size) {
+            viewport = {
+                ...size,
+                source: "resize",
+                timestamp: event.timestamp,
+                offsetMs: event.timestamp - archive.metadata.startTime,
+            };
+        }
+    }
+
+    return viewport;
 }
 
 export async function loadTimeTravelArchive(source: string): Promise<TimeTravelArchive> {

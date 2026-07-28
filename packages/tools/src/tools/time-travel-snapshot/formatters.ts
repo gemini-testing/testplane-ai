@@ -1,8 +1,12 @@
 import { ReporterTestResult } from "html-reporter/experimental/sdk";
-import { TimeTravelArchive } from "./rrweb-snapshots.js";
-import { TimeTravelSnapshotArgs } from "./schema.js";
+import { resolveViewportSizeAt, type TimeTravelArchive, type TimeTravelViewportSize } from "./rrweb-snapshots.js";
+import type { TimeTravelSnapshotArgs } from "./schema.js";
 import { ReporterTestStep, SelectedSnapshotTime, SnapshotInputSelection } from "./types.js";
 import { formatTimestamp } from "../../utils/formatters.js";
+
+interface TimeTravelSourceArgs {
+    report?: string;
+}
 
 function formatOffset(offsetMs: number): string {
     return offsetMs >= 0 ? `+${offsetMs}ms` : `${offsetMs}ms`;
@@ -61,7 +65,7 @@ export function formatReportTestSteps(result: ReporterTestResult, snapshotStartT
     return lines.join("\n");
 }
 
-function formatSelectedTime(selection: SelectedSnapshotTime): string {
+export function formatSelectedTime(selection: SelectedSnapshotTime): string {
     const lines = [
         `Reason: ${selection.reason}`,
         `Absolute timestamp: ${selection.absoluteTime} (${formatTimestamp(selection.absoluteTime)})`,
@@ -79,8 +83,8 @@ function formatSelectedTime(selection: SelectedSnapshotTime): string {
     return lines.join("\n");
 }
 
-function formatSourceInfo(
-    args: TimeTravelSnapshotArgs,
+export function formatSourceInfo(
+    args: TimeTravelSourceArgs,
     input: SnapshotInputSelection,
     archive: TimeTravelArchive,
 ): string {
@@ -103,6 +107,23 @@ function formatSourceInfo(
     return lines.join("\n");
 }
 
+function formatViewportSource(viewport: TimeTravelViewportSize): string {
+    const offset = formatOffset(Math.round(viewport.offsetMs));
+
+    return viewport.source === "resize"
+        ? `Source: rrweb viewport resize event at ${offset}`
+        : `Source: initial rrweb meta event at ${offset}`;
+}
+
+export function formatBrowserWindow(archive: TimeTravelArchive, selectedTime: SelectedSnapshotTime): string {
+    const viewport = resolveViewportSizeAt(archive, selectedTime);
+    if (!viewport) {
+        return "Viewport size: unknown";
+    }
+
+    return [`Viewport size: ${viewport.width}x${viewport.height}`, formatViewportSource(viewport)].join("\n");
+}
+
 export function formatResponse(
     args: TimeTravelSnapshotArgs,
     input: SnapshotInputSelection,
@@ -117,6 +138,8 @@ export function formatResponse(
         formatSourceInfo(args, input, archive),
         "## Selected Time",
         formatSelectedTime(selectedTime),
+        "## Browser Window",
+        formatBrowserWindow(archive, selectedTime),
     ];
 
     if (diffFromTime) {

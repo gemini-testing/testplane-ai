@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const timeTravelSnapshotSchema = {
+export const timeTravelSelectionSchema = {
     report: z
         .string()
         .min(1)
@@ -39,26 +39,18 @@ export const timeTravelSnapshotSchema = {
         .describe(
             "Time to inspect in milliseconds. Values within snapshot duration are offsets from the first rrweb event; larger values are absolute timestamps",
         ),
-    diffFrom: z
-        .number()
-        .finite()
-        .min(0, "--diff-from must be >= 0")
-        .optional()
-        .describe(
-            "When set, return only current DOM nodes that changed between this time and the requested time. Uses the same offset/timestamp rules as time",
-        ),
-    includeTags: z.array(z.string()).optional().describe("HTML tags to include in the snapshot besides defaults"),
-    includeAttrs: z
-        .array(z.string())
-        .optional()
-        .describe("HTML attributes to include in the snapshot besides defaults"),
-    excludeTags: z.array(z.string()).optional().describe("HTML tags to exclude from the snapshot"),
-    excludeAttrs: z.array(z.string()).optional().describe("HTML attributes to exclude from the snapshot"),
-    truncateText: z.boolean().optional().describe("Whether to truncate long text content (default: true)"),
-    maxTextLength: z.number().positive().optional().describe("Maximum length of text content before truncation"),
 };
 
-export const timeTravelSnapshotObjectSchema = z.object(timeTravelSnapshotSchema).superRefine((args, ctx) => {
+export function validateTimeTravelSelection(
+    args: {
+        report?: string;
+        name?: string;
+        browser?: string;
+        snapshotFile?: string;
+        time?: number;
+    },
+    ctx: z.RefinementCtx,
+): void {
     const hasReportMode = args.report !== undefined || args.name !== undefined || args.browser !== undefined;
     const hasDirectMode = args.snapshotFile !== undefined;
 
@@ -88,6 +80,31 @@ export const timeTravelSnapshotObjectSchema = z.object(timeTravelSnapshotSchema)
                 'Provide either "snapshotFile" with "time" or all report mode fields: "report", "name", and "browser".',
         });
     }
-});
+}
+
+export const timeTravelSnapshotSchema = {
+    ...timeTravelSelectionSchema,
+    diffFrom: z
+        .number()
+        .finite()
+        .min(0, "--diff-from must be >= 0")
+        .optional()
+        .describe(
+            "When set, return only current DOM nodes that changed between this time and the requested time. Uses the same offset/timestamp rules as time",
+        ),
+    includeTags: z.array(z.string()).optional().describe("HTML tags to include in the snapshot besides defaults"),
+    includeAttrs: z
+        .array(z.string())
+        .optional()
+        .describe("HTML attributes to include in the snapshot besides defaults"),
+    excludeTags: z.array(z.string()).optional().describe("HTML tags to exclude from the snapshot"),
+    excludeAttrs: z.array(z.string()).optional().describe("HTML attributes to exclude from the snapshot"),
+    truncateText: z.boolean().optional().describe("Whether to truncate long text content (default: true)"),
+    maxTextLength: z.number().positive().optional().describe("Maximum length of text content before truncation"),
+};
+
+export const timeTravelSnapshotObjectSchema = z
+    .object(timeTravelSnapshotSchema)
+    .superRefine(validateTimeTravelSelection);
 
 export type TimeTravelSnapshotArgs = z.output<typeof timeTravelSnapshotObjectSchema>;
