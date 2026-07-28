@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/gemini-testing/testplane-ai/compare/mcp-v0.8.0...mcp-v0.9.0) (2026-07-28)
+
+
+### Features
+
+* implement time-travel-export-html tool ([#50](https://github.com/gemini-testing/testplane-ai/issues/50)) ([30878d8](https://github.com/gemini-testing/testplane-ai/commit/30878d82270f0a2744ebb02f5c6c1cc425568006))
+
 ## [0.8.0](https://github.com/gemini-testing/testplane-ai/compare/mcp-v0.7.0...mcp-v0.8.0) (2026-07-22)
 
 
