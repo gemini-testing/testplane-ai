@@ -1,6 +1,6 @@
 {
   "name": "@testplane/tools",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "private": true,
   "description": "Testplane MCP tools — browser automation tools implementation",
   "type": "module",
