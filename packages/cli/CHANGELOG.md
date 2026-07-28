@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.2.1](https://github.com/gemini-testing/testplane-ai/compare/cli-v0.2.0...cli-v0.2.1) (2026-07-28)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @testplane/tools bumped from * to 1.0.0
+
 ## [0.2.0](https://github.com/gemini-testing/testplane-ai/compare/cli-v0.1.0...cli-v0.2.0) (2026-07-22)
 
 
