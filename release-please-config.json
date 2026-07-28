@@ -1,5 +1,6 @@
 {
     "bump-minor-pre-major": true,
+    "plugins": ["node-workspace"],
     "packages": {
         "packages/cli": {
             "release-type": "node",
@@ -8,6 +9,11 @@
         "packages/mcp": {
             "release-type": "node",
             "package-name": "@testplane/mcp"
+        },
+        "packages/tools": {
+            "release-type": "node",
+            "package-name": "@testplane/tools",
+            "skip-changelog": true
         }
     }
 }
