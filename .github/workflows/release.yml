@@ -17,6 +17,32 @@ jobs:
             cli_release_created: ${{ steps.release.outputs['packages/cli--release_created'] }}
             mcp_release_created: ${{ steps.release.outputs['packages/mcp--release_created'] }}
         steps:
+            - uses: actions/checkout@v6
+              if: ${{ github.event_name == 'push' }}
+              with:
+                  fetch-depth: 0
+
+            - name: Tag internal tools version
+              if: ${{ github.event_name == 'push' }}
+              env:
+                  BEFORE_SHA: ${{ github.event.before }}
+                  CURRENT_SHA: ${{ github.sha }}
+              run: |
+                  previous_version="$(git show "${BEFORE_SHA}:.release-please-manifest.json" | jq -r '.["packages/tools"] // empty')"
+                  current_version="$(jq -r '.["packages/tools"] // empty' .release-please-manifest.json)"
+
+                  if [[ -z "${previous_version}" || -z "${current_version}" || "${current_version}" == "${previous_version}" ]]; then
+                      exit 0
+                  fi
+
+                  tag="tools-v${current_version}"
+                  if git rev-parse --quiet --verify "refs/tags/${tag}"; then
+                      exit 0
+                  fi
+
+                  git tag "${tag}" "${CURRENT_SHA}"
+                  git push origin "refs/tags/${tag}"
+
             - uses: googleapis/release-please-action@v5
               if: ${{ github.event_name == 'push' }}
               id: release

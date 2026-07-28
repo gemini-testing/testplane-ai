@@ -13,7 +13,8 @@
         "packages/tools": {
             "release-type": "node",
             "package-name": "@testplane/tools",
-            "skip-changelog": true
+            "skip-changelog": true,
+            "skip-github-release": true
         }
     }
 }
