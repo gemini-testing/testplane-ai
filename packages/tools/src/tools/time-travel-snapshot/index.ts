@@ -7,14 +7,20 @@ import {
 } from "../../responses/browser-helpers.js";
 import { StandaloneTool, ToolKind } from "../../types.js";
 import { loadTimeTravelArchive, resolveTargetTime, type TimeTravelArchive } from "./rrweb-snapshots.js";
-import { getSnapshotInput, withRenderedTimeTravelFrame } from "./rendered-frame.js";
-import { timeTravelSnapshotObjectSchema, timeTravelSnapshotSchema, type TimeTravelSnapshotArgs } from "./schema.js";
+import { getSnapshotInput } from "../../utils/time-travel.js";
+import { withRenderedTimeTravelFrame } from "./rendered-frame.js";
+import { getReportDefaultTime } from "./report.js";
+import {
+    timeTravelSnapshotObjectSchema,
+    timeTravelSnapshotSchema,
+    type TimeTravelSnapshotArgs,
+} from "../../schemas/time-travel.js";
 import { diffPageSnapshots } from "./snapshot-diff.js";
 import { SelectedSnapshotTime } from "./types.js";
 import { formatResponse } from "./formatters.js";
 
 export { timeTravelExportHtml, timeTravelExportHtmlObjectSchema, timeTravelExportHtmlSchema } from "./export-html.js";
-export { timeTravelSnapshotObjectSchema, timeTravelSnapshotSchema } from "./schema.js";
+export { timeTravelSnapshotObjectSchema, timeTravelSnapshotSchema } from "../../schemas/time-travel.js";
 export {
     loadTimeTravelArchive as loadRrwebSnapshotArchive,
     resolveTargetTime,
@@ -22,10 +28,10 @@ export {
 } from "./rrweb-snapshots.js";
 export {
     findReportTestResult,
-    getReportDefaultTime,
     getSnapshotAttachment,
     resolveSnapshotAttachmentSource,
-} from "./report.js";
+} from "../../utils/time-travel.js";
+export { getReportDefaultTime } from "./report.js";
 export { diffPageSnapshots } from "./snapshot-diff.js";
 
 function getSnapshotOptions(args: TimeTravelSnapshotArgs): CaptureSnapshotOptions {
@@ -59,10 +65,11 @@ const timeTravelSnapshotCb: StandaloneTool<typeof timeTravelSnapshotSchema>["cb"
         const args = timeTravelSnapshotObjectSchema.parse(rawArgs);
         const input = await getSnapshotInput(args);
         const archive = await loadTimeTravelArchive(input.source);
+        const defaultTime = input.result && getReportDefaultTime(input.result);
         const selectedTime = resolveTargetTime(archive.metadata, {
             time: args.time,
-            defaultAbsoluteTime: input.defaultTime?.absoluteTime,
-            defaultReason: input.defaultTime?.reason,
+            defaultAbsoluteTime: defaultTime?.absoluteTime,
+            defaultReason: defaultTime?.reason,
         });
         const snapshotOptions = getSnapshotOptions(args);
 

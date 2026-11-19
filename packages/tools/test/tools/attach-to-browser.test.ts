@@ -108,7 +108,7 @@ describe(
                 expect(getTextContent(navigateResult)).toContain("✅ Successfully navigated to https://example.com");
 
                 // closeBrowser should actually terminate the process
-                const closeResult = await closeBrowser.cb({}, result.browser);
+                const closeResult = await closeBrowser.cb({}, () => result.browser!.deleteSession());
                 expect(closeResult.isError).toBe(false);
 
                 await new Promise(resolve => setTimeout(resolve, 100));

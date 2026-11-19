@@ -27,7 +27,7 @@ describe(
                 browser = await launchHeadlessBrowser();
                 await navigate.cb({ url: "https://example.com" }, browser);
 
-                const result = await closeBrowser.cb({}, browser);
+                const result = await closeBrowser.cb({}, () => browser!.deleteSession());
 
                 expect(result.isError).toBe(false);
                 expect(result.content).toBeDefined();
@@ -42,7 +42,7 @@ describe(
             });
 
             it("should handle closing when no browser session is active", async () => {
-                const result = await closeBrowser.cb({}, null);
+                const result = await closeBrowser.cb({});
 
                 expect(result.isError).toBe(false);
                 expect(result.content).toBeDefined();

@@ -8,9 +8,11 @@ import { StandaloneTool, ToolKind } from "../../types.js";
 import { formatFileSize, formatTimestamp } from "../../utils/formatters.js";
 import { loadTimeTravelArchive, resolveTargetTime, type TimeTravelArchive } from "./rrweb-snapshots.js";
 import { formatBrowserWindow, formatReportTestSteps, formatSelectedTime, formatSourceInfo } from "./formatters.js";
-import { getSnapshotInput, withRenderedTimeTravelFrame } from "./rendered-frame.js";
-import { timeTravelSelectionSchema, validateTimeTravelSelection } from "./schema.js";
-import type { SelectedSnapshotTime, SnapshotInputSelection } from "./types.js";
+import { getSnapshotInput, type SnapshotInputSelection } from "../../utils/time-travel.js";
+import { withRenderedTimeTravelFrame } from "./rendered-frame.js";
+import { getReportDefaultTime } from "./report.js";
+import { timeTravelSelectionSchema, validateTimeTravelSelection } from "../../schemas/time-travel.js";
+import type { SelectedSnapshotTime } from "./types.js";
 
 export const timeTravelExportHtmlSchema = {
     ...timeTravelSelectionSchema,
@@ -93,10 +95,11 @@ const timeTravelExportHtmlCb: StandaloneTool<typeof timeTravelExportHtmlSchema>[
         const args = timeTravelExportHtmlObjectSchema.parse(rawArgs);
         const input = await getSnapshotInput(args);
         const archive = await loadTimeTravelArchive(input.source);
+        const defaultTime = input.result && getReportDefaultTime(input.result);
         const selectedTime = resolveTargetTime(archive.metadata, {
             time: args.time,
-            defaultAbsoluteTime: input.defaultTime?.absoluteTime,
-            defaultReason: input.defaultTime?.reason,
+            defaultAbsoluteTime: defaultTime?.absoluteTime,
+            defaultReason: defaultTime?.reason,
         });
         const pageSource = await withRenderedTimeTravelFrame(archive, selectedTime, browser => browser.getPageSource());
         const saved = await saveHtmlFile(pageSource, args.filePath);
