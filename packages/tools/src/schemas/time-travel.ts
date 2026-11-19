@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const timeTravelSelectionSchema = {
+export const timeTravelSourceSchema = {
     report: z
         .string()
         .min(1)
@@ -31,6 +31,10 @@ export const timeTravelSelectionSchema = {
         .transform(value => value.trim())
         .optional()
         .describe("Path or URL to a time travel snapshot zip. Mutually exclusive with report mode"),
+};
+
+export const timeTravelSelectionSchema = {
+    ...timeTravelSourceSchema,
     time: z
         .number()
         .finite()

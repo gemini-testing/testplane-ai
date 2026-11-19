@@ -16,6 +16,9 @@ const EXPECTED_TOOL_NAMES = [
     "snapshot",
     "screenshot",
     "console",
+    "network-list",
+    "network-inspect",
+    "network-body",
     "list-tabs",
     "switch-tab",
     "new-tab",
@@ -86,6 +89,46 @@ describe(
             expect(snapshotPathMatch, "navigate response should reference a saved snapshot file").not.toBeNull();
             const snapshotContent = fs.readFileSync(snapshotPathMatch![1], "utf8");
             expect(snapshotContent).toContain("server-wiring-ok");
+        });
+
+        it("lists, inspects, and reads a live browser response", async () => {
+            const navigate = await client.callTool({ name: "navigate", arguments: { url: playgroundUrl } });
+            expect(navigate.isError).toBeFalsy();
+
+            const fetchResponse = await client.callTool({
+                name: "run-code",
+                arguments: {
+                    code: `await browser.execute(async () => {
+                        const response = await fetch("/network-fixture", { headers: { "X-Api-Key": "fixture-key" } });
+                        return response.text();
+                    })`,
+                },
+            });
+            expect(fetchResponse.isError).toBeFalsy();
+
+            const url = new URL("/network-fixture", playgroundUrl).href;
+            const list = await client.callTool({ name: "network-list", arguments: { url, json: true } });
+            const [listing] = list.content as Array<{ type: "text"; text: string }>;
+            const { requests } = JSON.parse(listing.text);
+            const { requestId } = requests.find((request: { url: string }) => request.url === url);
+
+            const inspect = await client.callTool({ name: "network-inspect", arguments: { requestId, json: true } });
+            const [details] = inspect.content as Array<{ type: "text"; text: string }>;
+            const recorded = JSON.parse(details.text);
+            expect(recorded).toMatchObject({ method: "GET", response: { status: 200 } });
+            const headers = (entries: { name: string; value: string }[]) =>
+                Object.fromEntries(entries.map(({ name, value }) => [name.toLowerCase(), value]));
+            expect(headers(recorded.headers)["x-api-key"]).toBe("fixtu...");
+            expect(headers(recorded.response.headers)).toMatchObject({
+                "set-cookie": "fixtu...",
+                "x-debug": "Beare...",
+            });
+
+            const body = await client.callTool({ name: "network-body", arguments: { requestId } });
+            expect(body.isError).toBeFalsy();
+            const [content] = body.content as Array<{ type: string; text: string }>;
+            expect(content.type).toBe("text");
+            expect(content.text).toContain("server-wiring-ok");
         });
 
         it("closeBrowser ends the session cleanly", async () => {

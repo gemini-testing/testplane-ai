@@ -1,14 +1,4 @@
-import { ReporterTestResult } from "html-reporter/experimental/sdk";
-
-export interface SnapshotInputSelection {
-    mode: "report" | "direct";
-    source: string;
-    result?: ReporterTestResult;
-    defaultTime?: {
-        absoluteTime: number;
-        reason: string;
-    };
-}
+import type { ReporterTestResult } from "html-reporter/experimental/sdk";
 
 export type ReporterTestStep = NonNullable<ReporterTestResult["history"]>[number];
 

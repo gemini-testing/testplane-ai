@@ -1,5 +1,4 @@
-import { readFile } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
+import { readTimeTravelZip } from "../../utils/time-travel.js";
 import { unzipSync } from "fflate";
 import { type eventWithTime as RrwebEvent, IncrementalSource } from "@rrweb/types";
 import { SelectedSnapshotTime } from "./types.js";
@@ -40,43 +39,6 @@ const RRWEB_META_EVENT = 4;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-export function isRemoteSource(source: string): boolean {
-    try {
-        const url = new URL(source);
-
-        return Boolean(url.host && url.protocol !== "file:");
-    } catch {
-        return false;
-    }
-}
-
-function sourceToLocalPath(source: string): string {
-    try {
-        const url = new URL(source);
-
-        if (url.protocol === "file:") {
-            return fileURLToPath(url);
-        }
-    } catch {
-        // Not a URL, treat it as a local path.
-    }
-
-    return source;
-}
-
-async function readTimeTravelZip(source: string): Promise<Uint8Array> {
-    if (isRemoteSource(source)) {
-        const response = await fetch(source);
-        if (!response.ok) {
-            throw new Error(`Failed to fetch snapshot archive "${source}": ${response.status} ${response.statusText}`);
-        }
-
-        return new Uint8Array(await response.arrayBuffer());
-    }
-
-    return new Uint8Array(await readFile(sourceToLocalPath(source)));
 }
 
 function getViewportSizeData(data: unknown): Pick<TimeTravelViewportSize, "width" | "height"> | null {

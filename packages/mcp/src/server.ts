@@ -7,6 +7,8 @@ import { tools, ToolKind, launchBrowserWithOptions, type BrowserOptions, type Br
 import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
+import type { WdioBrowser } from "testplane";
+import { NetworkRecorder } from "testplane/unstable";
 
 interface PackageJson {
     name: string;
@@ -35,6 +37,34 @@ export interface ServerOptions {
 
 export async function startServer(serverOptions: ServerOptions = {}): Promise<McpServer> {
     let browser: BrowserSession | null = null;
+    let recorder: NetworkRecorder | undefined;
+
+    async function setBrowser(nextBrowser: BrowserSession, recordNetwork: boolean): Promise<void> {
+        let nextRecorder: NetworkRecorder | undefined;
+        if (recordNetwork) {
+            try {
+                const session = nextBrowser as WdioBrowser;
+                if (await session.unstable_getCdp?.()) {
+                    nextRecorder = await NetworkRecorder.start(session, { maxBodySizeBytes: 10 * 1024 * 1024 });
+                }
+            } catch (error) {
+                console.error("Could not start network recording:", error);
+            }
+        }
+        browser = nextBrowser;
+        recorder = nextRecorder;
+    }
+
+    async function closeBrowser(): Promise<void> {
+        const closingBrowser = browser;
+        const closingRecorder = recorder;
+        browser = null;
+        recorder = undefined;
+
+        await closingRecorder?.stop().catch(() => {});
+        await closingBrowser?.deleteSession();
+    }
+
     const defaultOptions: BrowserOptions = { headless: serverOptions.headless ?? false };
     let sessionOptions: BrowserOptions = { ...defaultOptions };
 
@@ -54,13 +84,17 @@ export async function startServer(serverOptions: ServerOptions = {}): Promise<Mc
                     return tool.cb(args);
                 }
 
+                if (tool.kind === ToolKind.Network) {
+                    return tool.cb(args, recorder);
+                }
+
                 if (tool.kind === ToolKind.Action) {
                     if (!browser) {
                         if (!tool.autoLaunchBrowser) {
                             return createNoActiveBrowserResponse(tool.name);
                         }
 
-                        browser = await launchBrowserWithOptions(defaultOptions);
+                        await setBrowser(await launchBrowserWithOptions(defaultOptions), true);
                     }
 
                     return tool.cb(args, browser as never);
@@ -72,23 +106,20 @@ export async function startServer(serverOptions: ServerOptions = {}): Promise<Mc
                     if (result.browser) {
                         if (browser) {
                             try {
-                                await browser.deleteSession();
+                                await closeBrowser();
                             } catch (error) {
                                 console.error("Error closing existing browser before opening a new session:", error);
                             }
-                            browser = null;
                         }
 
-                        browser = result.browser;
+                        await setBrowser(result.browser, tool.name === "launch");
                         sessionOptions = result.options;
                     }
 
                     return result.response;
                 }
 
-                const response = await tool.cb(args, browser);
-                browser = null;
-                return response;
+                return tool.cb(args, browser ? closeBrowser : undefined);
             },
         );
     }
@@ -121,12 +152,10 @@ export async function startServer(serverOptions: ServerOptions = {}): Promise<Mc
                 .then(async () => {
                     if (browser) {
                         try {
-                            await browser.deleteSession();
+                            await closeBrowser();
                             console.error("Browser session closed");
                         } catch (error) {
                             console.error("Error closing browser session:", error);
-                        } finally {
-                            browser = null;
                         }
                     }
                 })
