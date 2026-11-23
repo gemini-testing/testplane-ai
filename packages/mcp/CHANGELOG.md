@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.10.0](https://github.com/gemini-testing/testplane-ai/compare/mcp-v0.9.0...mcp-v0.10.0) (2026-11-23)
+
+
+### Features
+
+* implement network requests/responses inspection ([#60](https://github.com/gemini-testing/testplane-ai/issues/60)) ([fe2047a](https://github.com/gemini-testing/testplane-ai/commit/fe2047a6f730e147eb19aea2d706453a92028adf))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @testplane/tools bumped from 1.0.0 to 1.1.0
+
 ## [0.9.0](https://github.com/gemini-testing/testplane-ai/compare/mcp-v0.8.0...mcp-v0.9.0) (2026-07-28)
 
 
