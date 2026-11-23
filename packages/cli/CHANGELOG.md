@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.0](https://github.com/gemini-testing/testplane-ai/compare/cli-v0.2.1...cli-v0.3.0) (2026-11-23)
+
+
+### Features
+
+* implement network requests/responses inspection ([#60](https://github.com/gemini-testing/testplane-ai/issues/60)) ([fe2047a](https://github.com/gemini-testing/testplane-ai/commit/fe2047a6f730e147eb19aea2d706453a92028adf))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @testplane/tools bumped from 1.0.0 to 1.1.0
+
 ## [0.2.1](https://github.com/gemini-testing/testplane-ai/compare/cli-v0.2.0...cli-v0.2.1) (2026-07-28)
 
 
