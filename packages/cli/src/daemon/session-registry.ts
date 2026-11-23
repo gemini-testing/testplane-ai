@@ -14,6 +14,7 @@ export interface SessionState {
     options: BrowserOptions;
     activeInteractions: number;
     expirationTimer: NodeJS.Timeout | null;
+    sessionQueue: Promise<unknown>;
 }
 
 export interface SessionRegistryOptions {
@@ -48,6 +49,7 @@ export class SessionRegistry {
                 options: { ...this._defaultOptions },
                 activeInteractions: 0,
                 expirationTimer: null,
+                sessionQueue: Promise.resolve(),
             };
             this._sessions.set(sessionName, state);
         }
@@ -69,22 +71,21 @@ export class SessionRegistry {
         this._scheduleExpirationTimer(sessionName, state);
     }
 
-    public async setBrowser(
-        state: SessionState,
-        browser: BrowserSession,
-        transport: TransportKind,
-        recordNetwork: boolean,
-    ): Promise<void> {
+    public queueSessionChange<T>(state: SessionState, change: () => Promise<T>): Promise<T> {
+        const result = state.sessionQueue.then(change);
+        state.sessionQueue = result.catch(() => undefined);
+        return result;
+    }
+
+    public async setBrowser(state: SessionState, browser: BrowserSession, transport: TransportKind): Promise<void> {
         let recorder: NetworkRecorder | undefined;
-        if (recordNetwork) {
-            try {
-                const session = browser as WdioBrowser;
-                if (await session.unstable_getCdp?.()) {
-                    recorder = await NetworkRecorder.start(session, { maxBodySizeBytes: 10 * 1024 * 1024 });
-                }
-            } catch (error) {
-                debug("Could not start network recording: %O", error);
+        try {
+            const session = browser as WdioBrowser;
+            if (await session.unstable_getCdp?.()) {
+                recorder = await NetworkRecorder.start(session, { maxBodySizeBytes: 10 * 1024 * 1024 });
             }
+        } catch (error) {
+            debug("Could not start network recording: %O", error);
         }
         state.browser = browser;
         state.recorder = recorder;

@@ -95,6 +95,16 @@ const listNetworkCb: ListNetwork["cb"] = async (args, recorder) => {
                 JSON.stringify({ total: requests.length, matched: matching.length, requests: listed }, null, 2),
             );
         }
+        if (requests.length === 0) {
+            return createSimpleResponse(
+                archivePath === undefined
+                    ? "No network requests captured in this session. Navigate or trigger a request and try again. If the list stays empty, network capture may be unavailable."
+                    : "No network requests captured in this recording.",
+            );
+        }
+        if (matching.length === 0) {
+            return createSimpleResponse("No requests match the filters.");
+        }
         return createSimpleResponse(
             [
                 `Showing ${listed.length} of ${matching.length} matching requests (${requests.length} captured)`,

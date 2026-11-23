@@ -79,10 +79,10 @@ it("lists, inspects, and reads exact bytes from a saved recording without a brow
         expect(details).toMatchObject({
             url: requests[1].url,
             headers: [{ name: "X-Fixture", value: "recorded" }],
-            body: { preview: "request payload" },
+            bodyCaptured: true,
             response: {
                 timing: { startTime: 2, responseHeadersStart: 5 },
-                body: { binary: true, sizeBytes: responseBody.length },
+                bodyCaptured: true,
             },
         });
 
@@ -94,6 +94,9 @@ it("lists, inspects, and reads exact bytes from a saved recording without a brow
         expect(printed.stdout).toContain("Request headers:\nX-Fixture: recorded");
         expect(printed.stdout).toContain("Response: 404\nContent-Type: application/octet-stream");
         expect(printed.stdout).toContain("Timing (ms):\nstartTime: 2\nresponseHeadersStart: 5");
+        expect(printed.stdout).toContain("Run `network-body 2 --request`");
+        expect(printed.stdout).toContain("Run `network-body 2`");
+        expect(printed.stdout).not.toContain("request payload");
 
         const bodyArgs = ["network-body", "2", "--snapshot-file", "capture.zip"];
         const binary = await runCli(bodyArgs, env, dir);

@@ -38,18 +38,24 @@ export interface ServerOptions {
 export async function startServer(serverOptions: ServerOptions = {}): Promise<McpServer> {
     let browser: BrowserSession | null = null;
     let recorder: NetworkRecorder | undefined;
+    let sessionQueue: Promise<unknown> = Promise.resolve();
+    let isShuttingDown = false;
 
-    async function setBrowser(nextBrowser: BrowserSession, recordNetwork: boolean): Promise<void> {
+    function queueSessionChange<T>(change: () => Promise<T>): Promise<T> {
+        const result = sessionQueue.then(change);
+        sessionQueue = result.catch(() => undefined);
+        return result;
+    }
+
+    async function setBrowser(nextBrowser: BrowserSession): Promise<void> {
         let nextRecorder: NetworkRecorder | undefined;
-        if (recordNetwork) {
-            try {
-                const session = nextBrowser as WdioBrowser;
-                if (await session.unstable_getCdp?.()) {
-                    nextRecorder = await NetworkRecorder.start(session, { maxBodySizeBytes: 10 * 1024 * 1024 });
-                }
-            } catch (error) {
-                console.error("Could not start network recording:", error);
+        try {
+            const session = nextBrowser as WdioBrowser;
+            if (await session.unstable_getCdp?.()) {
+                nextRecorder = await NetworkRecorder.start(session, { maxBodySizeBytes: 10 * 1024 * 1024 });
             }
+        } catch (error) {
+            console.error("Could not start network recording:", error);
         }
         browser = nextBrowser;
         recorder = nextRecorder;
@@ -80,6 +86,10 @@ export async function startServer(serverOptions: ServerOptions = {}): Promise<Mc
             tool.description,
             tool.schema as unknown as ZodRawShape,
             async (args: any): Promise<any> => {
+                if (isShuttingDown) {
+                    throw new Error("MCP server is shutting down");
+                }
+
                 if (tool.kind === ToolKind.Standalone) {
                     return tool.cb(args);
                 }
@@ -89,37 +99,35 @@ export async function startServer(serverOptions: ServerOptions = {}): Promise<Mc
                 }
 
                 if (tool.kind === ToolKind.Action) {
-                    if (!browser) {
-                        if (!tool.autoLaunchBrowser) {
-                            return createNoActiveBrowserResponse(tool.name);
+                    const activeBrowser = await queueSessionChange(async () => {
+                        if (!browser && tool.autoLaunchBrowser) {
+                            await setBrowser(await launchBrowserWithOptions(defaultOptions));
                         }
+                        return browser;
+                    });
 
-                        await setBrowser(await launchBrowserWithOptions(defaultOptions), true);
+                    if (!activeBrowser) {
+                        return createNoActiveBrowserResponse(tool.name);
                     }
 
-                    return tool.cb(args, browser as never);
+                    return tool.cb(args, activeBrowser as never);
                 }
 
                 if (tool.kind === ToolKind.SessionOpen) {
-                    const result = await tool.cb(args, sessionOptions);
-
-                    if (result.browser) {
-                        if (browser) {
-                            try {
-                                await closeBrowser();
-                            } catch (error) {
-                                console.error("Error closing existing browser before opening a new session:", error);
-                            }
+                    return queueSessionChange(async () => {
+                        const { browser: nextBrowser, options, response } = await tool.cb(args, sessionOptions);
+                        if (!nextBrowser) {
+                            return response;
                         }
 
-                        await setBrowser(result.browser, tool.name === "launch");
-                        sessionOptions = result.options;
-                    }
-
-                    return result.response;
+                        await closeBrowser().catch(error => console.error("Error closing previous browser:", error));
+                        await setBrowser(nextBrowser);
+                        sessionOptions = options;
+                        return response;
+                    });
                 }
 
-                return tool.cb(args, browser ? closeBrowser : undefined);
+                return queueSessionChange(() => tool.cb(args, browser ? closeBrowser : undefined));
             },
         );
     }
@@ -134,7 +142,6 @@ export async function startServer(serverOptions: ServerOptions = {}): Promise<Mc
         await server.connect(transport);
         console.error("Testplane MCP server connected");
 
-        let isShuttingDown = false;
         const cleanup = () => {
             if (isShuttingDown) {
                 return;
@@ -148,17 +155,16 @@ export async function startServer(serverOptions: ServerOptions = {}): Promise<Mc
                 process.exit(1);
             }, 5000);
 
-            Promise.resolve()
-                .then(async () => {
-                    if (browser) {
-                        try {
-                            await closeBrowser();
-                            console.error("Browser session closed");
-                        } catch (error) {
-                            console.error("Error closing browser session:", error);
-                        }
+            queueSessionChange(async () => {
+                if (browser) {
+                    try {
+                        await closeBrowser();
+                        console.error("Browser session closed");
+                    } catch (error) {
+                        console.error("Error closing browser session:", error);
                     }
-                })
+                }
+            })
                 .then(() => {
                     console.error("Cleanup completed");
                     clearTimeout(cleanupTimeout);

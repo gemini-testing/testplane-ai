@@ -15,7 +15,7 @@ export interface SnapshotInputSelection {
 }
 
 interface SnapshotAttachment {
-    type: 0 | "snapshot";
+    type: 0; // AttachmentType.Snapshot in html-reporter
     path: string;
     maxWidth?: number;
     maxHeight?: number;
@@ -40,7 +40,7 @@ function getLatestAttempt<T extends ReporterTestResult>(results: readonly T[]): 
     });
 }
 
-function getSelectionError(results: readonly ReporterTestResult[], args: ReportResultSelection): string {
+function getSelectionErrorMessage(results: readonly ReporterTestResult[], args: ReportResultSelection): string {
     const resultsWithMatchingName = results.filter(result => result.fullName === args.name);
 
     if (!resultsWithMatchingName.length) {
@@ -68,7 +68,7 @@ export function findReportTestResult(
     );
 
     if (!matchingAttempts.length) {
-        throw new Error(getSelectionError(results, args));
+        throw new Error(getSelectionErrorMessage(results, args));
     }
 
     if (args.attempt === undefined) {
@@ -77,7 +77,7 @@ export function findReportTestResult(
 
     const matchingAttempt = matchingAttempts.find(result => result.attempt === args.attempt);
     if (!matchingAttempt) {
-        throw new Error(getSelectionError(results, args));
+        throw new Error(getSelectionErrorMessage(results, args));
     }
 
     return matchingAttempt;
@@ -90,7 +90,7 @@ function isSnapshotAttachment(attachment: unknown): attachment is SnapshotAttach
         "path" in attachment &&
         typeof attachment.path === "string" &&
         "type" in attachment &&
-        (attachment.type === 0 || attachment.type === "snapshot")
+        attachment.type === 0
     );
 }
 
@@ -105,25 +105,17 @@ export function getSnapshotAttachment(result: ReporterTestResult): SnapshotAttac
     return attachment;
 }
 
-function isProbablyFileUrl(url: URL): boolean {
-    if (url.pathname.endsWith("/")) {
-        return false;
-    }
-
-    return path.posix.basename(url.pathname).includes(".");
-}
-
 function resolveRemoteSnapshotPath(report: string, attachmentPath: string): string {
     if (isRemoteSource(attachmentPath)) {
         return attachmentPath;
     }
 
-    const baseUrl = new URL(report);
-    if (!isProbablyFileUrl(baseUrl) && !baseUrl.pathname.endsWith("/")) {
-        baseUrl.pathname = `${baseUrl.pathname}/`;
+    const reportUrl = new URL(report);
+    if (!path.posix.extname(reportUrl.pathname) && !reportUrl.pathname.endsWith("/")) {
+        reportUrl.pathname += "/";
     }
 
-    return new URL(attachmentPath, baseUrl).toString();
+    return new URL(attachmentPath, reportUrl).toString();
 }
 
 async function getLocalReportDir(reportPath: string): Promise<string> {
