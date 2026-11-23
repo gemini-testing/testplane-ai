@@ -1,11 +1,9 @@
 #!/usr/bin/env node
 
-import { launchBrowser } from "testplane/unstable";
+import { launchBrowserWithOptions } from "@testplane/tools";
 
 async function preloadBrowser() {
-    const browser = await launchBrowser({
-        headless: "new",
-    });
+    const browser = await launchBrowserWithOptions({ headless: true });
 
     await browser.deleteSession();
 }
