@@ -12,7 +12,8 @@ const attachToBrowserCb: SessionOpenTool<typeof attachToBrowserSchema>["cb"] = a
 
         console.error("Attach to browser");
         const browser = await attachTestplaneBrowser(session as SessionOptions);
-        await browser.getUrl(); // verify the attach actually worked
+        // A read-only POST verifies the session without triggering got's background retries on a refused GET.
+        await browser.execute(() => true);
 
         return {
             browser,

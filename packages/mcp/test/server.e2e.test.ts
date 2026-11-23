@@ -53,8 +53,11 @@ describe(
         }, E2E_TEST_TIMEOUT);
 
         afterAll(async () => {
-            if (client) await client.close();
-            if (testServer) await testServer.stop();
+            try {
+                await client?.callTool({ name: "close-browser", arguments: {} });
+            } finally {
+                await Promise.all([client?.close(), testServer?.stop()]);
+            }
         });
 
         it("registers every tool with MCP", async () => {
@@ -124,11 +127,10 @@ describe(
                 "x-debug": "Beare...",
             });
 
-            const body = await client.callTool({ name: "network-body", arguments: { requestId } });
-            expect(body.isError).toBeFalsy();
-            const [content] = body.content as Array<{ type: string; text: string }>;
-            expect(content.type).toBe("text");
-            expect(content.text).toContain("server-wiring-ok");
+            // The recorder writes the body asynchronously after the response arrives.
+            await expect
+                .poll(() => client.callTool({ name: "network-body", arguments: { requestId } }), { timeout: 5000 })
+                .toMatchObject({ isError: false, content: [{ type: "text", text: "server-wiring-ok" }] });
         });
 
         it("closeBrowser ends the session cleanly", async () => {

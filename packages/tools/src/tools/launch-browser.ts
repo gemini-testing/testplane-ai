@@ -36,7 +36,7 @@ const windowSizeSchema = z
     ])
     .optional()
     .describe(
-        'Viewport to use for the session. Provide {"width": number, "height": number} or a string like "1280x720"; use null to reset to the default size.',
+        'Browser window size to use for the session. Provide {"width": number, "height": number} or a string like "1280x720"; use null to reset to the default size.',
     );
 
 export const launchBrowserSchema = {

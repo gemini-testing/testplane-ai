@@ -105,17 +105,7 @@ describe(
 
                 expect(getTextContent(launchResult.response)).toBe("Successfully launched browser session");
 
-                const navigateResult = await navigate.cb(
-                    { url: `${playgroundUrl}/mobile-info.html` },
-                    launchResult.browser!,
-                );
-
-                expect(navigateResult.isError).toBe(false);
-                const snapshot = await readSnapshotFromResponse(getTextContent(navigateResult));
-
-                expect(snapshot).toContain("Viewport width: 1280");
-                // Viewport height is less than window height due to browser chrome
-                expect(snapshot).toContain("Viewport height: 577");
+                expect(await activeBrowser!.getWindowSize()).toEqual({ width: 1280, height: 720 });
             });
 
             it("should launch browser with window size as string", async () => {
@@ -125,17 +115,7 @@ describe(
                 expect(launchResult.response.isError).toBe(false);
                 expect(getTextContent(launchResult.response)).toBe("Successfully launched browser session");
 
-                const navigateResult = await navigate.cb(
-                    { url: `${playgroundUrl}/mobile-info.html` },
-                    launchResult.browser!,
-                );
-
-                expect(navigateResult.isError).toBe(false);
-                const snapshot = await readSnapshotFromResponse(getTextContent(navigateResult));
-
-                expect(snapshot).toContain("Viewport width: 1024");
-                // Viewport height is less than window height due to browser chrome
-                expect(snapshot).toContain("Viewport height: 625");
+                expect(await activeBrowser!.getWindowSize()).toEqual({ width: 1024, height: 768 });
             });
 
             it("should launch browser with windowSize null to reset to default", async () => {
