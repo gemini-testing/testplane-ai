@@ -15,6 +15,10 @@ export const attachToBrowserSchema = {
                     browserName: z.string().describe("Name of the browser being automated"),
                     browserVersion: z.string().describe("Version of the browser"),
                     setWindowRect: z.boolean().describe("Window resizing capability flag"),
+                    "se:cdp": z.string().optional().describe("Selenium Grid CDP WebSocket URL"),
+                    "goog:chromeOptions": z
+                        .object({ debuggerAddress: z.string().optional().describe("Chrome debugger address") })
+                        .optional(),
                 })
                 .describe("Session capabilities"),
             sessionOpts: z

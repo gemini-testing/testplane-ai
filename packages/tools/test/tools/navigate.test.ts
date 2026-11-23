@@ -5,7 +5,7 @@ import { WdioBrowser } from "testplane";
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 
 import { navigate } from "../../src/tools/navigate.js";
-import { PlaygroundServer } from "../test-server.js";
+import { PlaygroundServer, stopServer } from "../test-server.js";
 import { launchHeadlessBrowser, getTextContent } from "../setup.js";
 import { INTEGRATION_TEST_TIMEOUT } from "../constants.js";
 
@@ -48,11 +48,13 @@ describe(
         });
 
         it("should ignore failed resource loads while navigating", async () => {
-            const flakyResourceServer = http.createServer((_req, res) => {
+            const flakyResourceServer = http.createServer((req, res) => {
+                if (req.url === "/missing.css") {
+                    res.writeHead(404).end();
+                    return;
+                }
                 res.writeHead(200, { "Content-Type": "text/html" });
-                res.end(
-                    '<!doctype html><html><head><script src="http://127.0.0.1:9/failing-resource.js"></script></head><body>ok</body></html>',
-                );
+                res.end('<!doctype html><link rel="stylesheet" href="/missing.css"><p>ok</p>');
             });
 
             await new Promise<void>(resolve => flakyResourceServer.listen(0, resolve));
@@ -66,7 +68,7 @@ describe(
                 const text = getTextContent(result);
                 expect(text).toContain(`Successfully navigated to ${flakyUrl}`);
             } finally {
-                await new Promise<void>(resolve => flakyResourceServer.close(() => resolve()));
+                await stopServer(flakyResourceServer);
             }
         });
 
@@ -115,7 +117,7 @@ describe(
                     expect(elapsedTime).toBeGreaterThan(1400);
                     expect(elapsedTime).toBeLessThan(7000);
                 } finally {
-                    await new Promise<void>(resolve => slowServer.close(() => resolve()));
+                    await stopServer(slowServer);
                 }
             });
         });

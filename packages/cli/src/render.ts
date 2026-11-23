@@ -1,8 +1,14 @@
 import type { Response } from "./ipc/protocol.js";
 
-export function renderAndExit(response: Response): never {
+function write(stream: NodeJS.WritableStream, chunk: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+        stream.write(chunk, error => (error ? reject(error) : resolve()));
+    });
+}
+
+export async function renderAndExit(response: Response): Promise<never> {
     if (response.kind === "error") {
-        process.stderr.write(`${response.message}\n`);
+        await write(process.stderr, response.message + "\n");
         process.exit(2);
     }
 
@@ -11,6 +17,6 @@ export function renderAndExit(response: Response): never {
         .map(c => c.text ?? "")
         .join("\n");
 
-    process.stdout.write(text.endsWith("\n") ? text : text + "\n");
+    await write(process.stdout, text.endsWith("\n") ? text : text + "\n");
     process.exit(response.isError ? 1 : 0);
 }

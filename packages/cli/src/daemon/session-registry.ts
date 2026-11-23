@@ -1,4 +1,6 @@
 import type { BrowserOptions, BrowserSession, TransportKind } from "@testplane/tools";
+import type { WdioBrowser } from "testplane";
+import { NetworkRecorder } from "testplane/unstable";
 
 import makeDebug from "debug";
 
@@ -6,11 +8,13 @@ const debug = makeDebug("testplane-cli:daemon:session-registry");
 
 export interface SessionState {
     browser: BrowserSession | null;
+    recorder?: NetworkRecorder;
     transport: TransportKind | null;
     defaultOptions: BrowserOptions;
     options: BrowserOptions;
     activeInteractions: number;
     expirationTimer: NodeJS.Timeout | null;
+    sessionQueue: Promise<unknown>;
 }
 
 export interface SessionRegistryOptions {
@@ -45,6 +49,7 @@ export class SessionRegistry {
                 options: { ...this._defaultOptions },
                 activeInteractions: 0,
                 expirationTimer: null,
+                sessionQueue: Promise.resolve(),
             };
             this._sessions.set(sessionName, state);
         }
@@ -66,10 +71,36 @@ export class SessionRegistry {
         this._scheduleExpirationTimer(sessionName, state);
     }
 
-    public clearBrowser(sessionName: string, state: SessionState): void {
+    public queueSessionChange<T>(state: SessionState, change: () => Promise<T>): Promise<T> {
+        const result = state.sessionQueue.then(change);
+        state.sessionQueue = result.catch(() => undefined);
+        return result;
+    }
+
+    public async setBrowser(state: SessionState, browser: BrowserSession, transport: TransportKind): Promise<void> {
+        let recorder: NetworkRecorder | undefined;
+        try {
+            const session = browser as WdioBrowser;
+            if (await session.unstable_getCdp?.()) {
+                recorder = await NetworkRecorder.start(session, { maxBodySizeBytes: 10 * 1024 * 1024 });
+            }
+        } catch (error) {
+            debug("Could not start network recording: %O", error);
+        }
+        state.browser = browser;
+        state.recorder = recorder;
+        state.transport = transport;
+    }
+
+    public async closeBrowser(sessionName: string, state: SessionState): Promise<void> {
+        const { browser, recorder } = state;
         state.browser = null;
+        state.recorder = undefined;
         state.transport = null;
         this._cancelExpirationTimer(sessionName, state);
+
+        await recorder?.stop().catch(() => {});
+        await browser?.deleteSession();
     }
 
     public hasLive(): boolean {
@@ -101,13 +132,9 @@ export class SessionRegistry {
             debug("Stale session detected, clearing: session=%s", sessionName);
 
             try {
-                await this._closeBrowserSession(browser);
+                await this.closeBrowser(sessionName, state);
             } catch (error) {
                 debug("Stale session cleanup error: session=%s message=%s", sessionName, formatError(error));
-            }
-
-            if (state.browser === browser) {
-                this.clearBrowser(sessionName, state);
             }
         }
     }
@@ -121,12 +148,10 @@ export class SessionRegistry {
             debug("Closing session: session=%s", sessionName);
 
             try {
-                await this._closeBrowserSession(state.browser);
+                await this.closeBrowser(sessionName, state);
             } catch (error) {
                 debug("Session cleanup error: session=%s message=%s", sessionName, formatError(error));
             }
-
-            this.clearBrowser(sessionName, state);
         }
     }
 
@@ -168,10 +193,8 @@ export class SessionRegistry {
         }
 
         debug("Session expiration timer fired: session=%s", sessionName);
-        state.browser = null;
-
         try {
-            await this._closeBrowserSession(browser);
+            await this.closeBrowser(sessionName, state);
         } catch (error) {
             debug("Session expiration cleanup error: session=%s message=%s", sessionName, formatError(error));
         }
@@ -187,9 +210,5 @@ export class SessionRegistry {
         }
 
         return true;
-    }
-
-    private async _closeBrowserSession(browser: BrowserSession): Promise<void> {
-        await browser.deleteSession();
     }
 }

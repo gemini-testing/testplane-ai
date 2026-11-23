@@ -2,7 +2,7 @@ import { Command } from "commander";
 import path from "node:path";
 import type { ZodTypeAny } from "zod";
 
-import { tools } from "@testplane/tools";
+import { tools, type CliHints } from "@testplane/tools";
 
 import makeDebug from "debug";
 import { sendRequest } from "./client.js";
@@ -15,25 +15,17 @@ interface ToolToRegister {
     name: string;
     description: string;
     schema: Record<string, unknown>;
-    cli?: {
-        section?: string;
-        positional?: string[];
-        usage?: string;
-        examples?: string[];
-    };
+    cli?: CliHints;
 }
 
 let nextRequestId = 1;
 
-function prepareCliArgs(toolName: string, args: Record<string, unknown>): Record<string, unknown> {
-    if (toolName !== "run-code" || typeof args.file !== "string" || path.isAbsolute(args.file)) {
-        return args;
+function resolveCliPath(value: string, kind: "path" | "path-or-url"): string {
+    if (kind === "path-or-url") {
+        const trimmed = value.trim();
+        return URL.canParse(trimmed) ? value : path.resolve(trimmed);
     }
-
-    return {
-        ...args,
-        file: path.resolve(process.cwd(), args.file),
-    };
+    return path.isAbsolute(value) ? value : path.resolve(value);
 }
 
 function registerTool(program: Command, tool: ToolToRegister, getSessionName: () => string): void {
@@ -87,18 +79,23 @@ function registerTool(program: Command, tool: ToolToRegister, getSessionName: ()
                 args[positionalNames[i]] = value;
             }
 
-            const requestArgs = prepareCliArgs(tool.name, args);
+            for (const [field, kind] of Object.entries(tool.cli?.resolvePaths ?? {})) {
+                const value = args[field];
+                if (kind && typeof value === "string") {
+                    args[field] = resolveCliPath(value, kind);
+                }
+            }
 
-            debug("Invoking: tool=%s args=%o", tool.name, requestArgs);
+            debug("Invoking: tool=%s args=%o", tool.name, args);
             const res = await sendRequest({
                 id: nextRequestId++,
                 kind: "call",
                 tool: tool.name,
                 sessionName: getSessionName(),
-                args: requestArgs,
+                args,
             });
 
-            renderAndExit(res);
+            await renderAndExit(res);
         } catch (err) {
             process.stderr.write(`${tool.name}: ${err instanceof Error ? err.message : String(err)}\n`);
             process.exit(2);

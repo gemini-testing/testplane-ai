@@ -25,12 +25,6 @@ function createUnsupportedReplToolResponse(toolName: string): ResponseResult["co
     ];
 }
 
-async function closeBrowserSession(
-    browser: NonNullable<ReturnType<SessionRegistry["getOrCreate"]>["browser"]>,
-): Promise<void> {
-    await browser.deleteSession();
-}
-
 /**
  * Handles requests from clients, executing tools in sessions as needed.
  */
@@ -88,26 +82,34 @@ export class RequestHandler {
         const state = sessions.beginInteraction(req.sessionName);
 
         try {
+            if (tool.kind === ToolKind.Network) {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const result = await tool.cb(parsedArgs as any, state.recorder);
+                return { id: req.id, kind: "result", content: result.content, isError: result.isError };
+            }
+
             if (tool.kind === ToolKind.Action) {
-                if (!state.browser) {
-                    if (!tool.autoLaunchBrowser) {
-                        debug("Action requires an active browser: session=%s tool=%s", req.sessionName, req.tool);
-
-                        return {
-                            id: req.id,
-                            kind: "result",
-                            content: createNoActiveBrowserResponse(tool.name),
-                            isError: true,
-                        };
+                const { browser, transport } = await sessions.queueSessionChange(state, async () => {
+                    if (!state.browser && tool.autoLaunchBrowser) {
+                        debug("Auto-launching browser: session=%s tool=%s", req.sessionName, req.tool);
+                        const browser = await launchBrowserWithOptions(state.defaultOptions);
+                        await sessions.setBrowser(state, browser, "launch-browser");
                     }
+                    return { browser: state.browser, transport: state.transport ?? "launch-browser" };
+                });
 
-                    debug("Auto-launching browser: session=%s tool=%s", req.sessionName, req.tool);
-                    state.browser = await launchBrowserWithOptions(state.defaultOptions);
-                    state.transport = "launch-browser";
+                if (!browser) {
+                    debug("Action requires an active browser: session=%s tool=%s", req.sessionName, req.tool);
+
+                    return {
+                        id: req.id,
+                        kind: "result",
+                        content: createNoActiveBrowserResponse(tool.name),
+                        isError: true,
+                    };
                 }
 
                 const supportedTransports = tool.supportedTransports ?? ["launch-browser"];
-                const transport = state.transport ?? "launch-browser";
                 if (!supportedTransports.includes(transport)) {
                     debug(
                         "Action is not supported with current transport: session=%s tool=%s transport=%s",
@@ -125,36 +127,35 @@ export class RequestHandler {
                 }
 
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                const result = await tool.cb(parsedArgs as any, state.browser as never);
+                const result = await tool.cb(parsedArgs as any, browser as never);
 
                 return { id: req.id, kind: "result", content: result.content, isError: result.isError };
             }
 
             if (tool.kind === ToolKind.SessionOpen) {
-                if (state.browser) {
-                    debug("Replacing existing browser session: session=%s", req.sessionName);
+                const openResult = await sessions.queueSessionChange(state, async () => {
+                    if (state.browser) {
+                        debug("Replacing existing browser session: session=%s", req.sessionName);
 
-                    try {
-                        await closeBrowserSession(state.browser);
-                    } catch (error) {
-                        debug(
-                            "Error closing previous session: session=%s message=%s",
-                            req.sessionName,
-                            formatError(error),
-                        );
+                        try {
+                            await sessions.closeBrowser(req.sessionName, state);
+                        } catch (error) {
+                            debug(
+                                "Error closing previous session: session=%s message=%s",
+                                req.sessionName,
+                                formatError(error),
+                            );
+                        }
                     }
 
-                    state.browser = null;
-                    state.transport = null;
-                }
-
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                const openResult = await tool.cb(parsedArgs as any, state.options);
-                if (openResult.browser) {
-                    state.browser = openResult.browser;
-                    state.transport = openResult.transport ?? "launch-browser";
-                    state.options = openResult.options;
-                }
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    const result = await tool.cb(parsedArgs as any, state.options);
+                    if (result.browser) {
+                        await sessions.setBrowser(state, result.browser, result.transport ?? "launch-browser");
+                        state.options = result.options;
+                    }
+                    return result;
+                });
 
                 return {
                     id: req.id,
@@ -164,9 +165,11 @@ export class RequestHandler {
                 };
             }
 
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const closeResult = await tool.cb(parsedArgs as any, state.browser);
-            sessions.clearBrowser(req.sessionName, state);
+            const closeResult = await sessions.queueSessionChange(state, () => {
+                const close = state.browser ? () => sessions.closeBrowser(req.sessionName, state) : undefined;
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                return tool.cb(parsedArgs as any, close);
+            });
 
             return { id: req.id, kind: "result", content: closeResult.content, isError: closeResult.isError };
         } catch (error) {

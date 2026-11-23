@@ -55,6 +55,19 @@ describe("CLI user scenarios", () => {
         expect(snap.out).toContain("type here");
     });
 
+    it("reads a response from the live browser", async () => {
+        const url = new URL("/?network", playgroundUrl).href;
+        expect((await cli("navigate", url)).code).toBe(0);
+        const listing = await cli("network-list", "--url", url, "--json");
+        expect(listing.code).toBe(0);
+        const { requests } = JSON.parse(listing.out);
+        const { requestId } = requests.find((request: { url: string }) => request.url === url);
+
+        const body = await cli("network-body", requestId);
+        expect(body.code).toBe(0);
+        expect(body.out).toContain("e2e-ok");
+    });
+
     it("should click a button by ARIA role and verify the DOM changes", async () => {
         await cli("navigate", playgroundUrl);
 

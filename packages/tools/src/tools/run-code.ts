@@ -216,6 +216,7 @@ export const runCode: ActionTool<typeof runCodeSchema, unknown> = {
     cb: runCodeCb,
     cli: {
         positional: ["code"],
+        resolvePaths: { file: "path" },
         section: "Advanced",
         usage: "[options] [code]",
         examples: [

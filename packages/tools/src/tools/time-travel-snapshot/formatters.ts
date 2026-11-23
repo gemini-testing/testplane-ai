@@ -1,7 +1,8 @@
 import { ReporterTestResult } from "html-reporter/experimental/sdk";
 import { resolveViewportSizeAt, type TimeTravelArchive, type TimeTravelViewportSize } from "./rrweb-snapshots.js";
-import type { TimeTravelSnapshotArgs } from "./schema.js";
-import { ReporterTestStep, SelectedSnapshotTime, SnapshotInputSelection } from "./types.js";
+import type { TimeTravelSnapshotArgs } from "../../schemas/time-travel.js";
+import type { SnapshotInputSelection } from "../../utils/time-travel.js";
+import type { ReporterTestStep, SelectedSnapshotTime } from "./types.js";
 import { formatTimestamp } from "../../utils/formatters.js";
 
 interface TimeTravelSourceArgs {

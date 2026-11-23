@@ -1,7 +1,7 @@
 import { z, ZodRawShape } from "zod";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { WdioBrowser } from "testplane";
-import type { StandaloneBrowserOptionsInput } from "testplane/unstable";
+import type { NetworkRecorder, StandaloneBrowserOptionsInput } from "testplane/unstable";
 import type { BrowserSession } from "./browser/types.js";
 
 export type ToolArgs<S extends ZodRawShape> = z.objectOutputType<S, z.ZodTypeAny>;
@@ -16,6 +16,8 @@ export interface BrowserOptions {
 }
 
 export interface CliHints<S extends ZodRawShape = ZodRawShape> {
+    /** Resolve local paths against the CLI process's working directory before sending them to the daemon. */
+    resolvePaths?: Partial<Record<keyof S & string, "path" | "path-or-url">>;
     /**
      * Ordered list of schema field names that should be exposed as CLI positional
      * arguments instead of flags. Each entry must be a key of the tool's schema.
@@ -31,8 +33,11 @@ export interface CliHints<S extends ZodRawShape = ZodRawShape> {
 }
 
 export enum ToolKind {
+    /** Tools that don't need access to browser */
     Standalone = "standalone",
+    /** Tools that need access to browser */
     Action = "action",
+    Network = "network",
     SessionOpen = "session-open",
     SessionClose = "session-close",
 }
@@ -57,6 +62,11 @@ export interface StandaloneTool<S extends ZodRawShape> extends ToolBase<S> {
     cb: (args: ToolArgs<S>) => Promise<ToolResponse>;
 }
 
+export interface NetworkTool<S extends ZodRawShape> extends ToolBase<S> {
+    kind: ToolKind.Network;
+    cb: (args: ToolArgs<S>, recorder?: Pick<NetworkRecorder, "snapshot">) => Promise<ToolResponse>;
+}
+
 export interface SessionOpenResult {
     browser: BrowserSession | null;
     options: BrowserOptions;
@@ -71,11 +81,12 @@ export interface SessionOpenTool<S extends ZodRawShape> extends ToolBase<S> {
 
 export interface SessionCloseTool<S extends ZodRawShape> extends ToolBase<S> {
     kind: ToolKind.SessionClose;
-    cb: (args: ToolArgs<S>, browser: BrowserSession | null) => Promise<ToolResponse>;
+    cb: (args: ToolArgs<S>, close?: () => Promise<void>) => Promise<ToolResponse>;
 }
 
 export type Tool<S extends ZodRawShape> =
     | StandaloneTool<S>
     | ActionTool<S, never>
+    | NetworkTool<S>
     | SessionOpenTool<S>
     | SessionCloseTool<S>;

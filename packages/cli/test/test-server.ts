@@ -1,4 +1,5 @@
 import http from "http";
+import type { AddressInfo } from "net";
 import path from "path";
 import { fileURLToPath } from "url";
 import { launchServer } from "./simple-http-server.js";
@@ -7,17 +8,16 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export class PlaygroundServer {
     private server: http.Server | null = null;
-    private readonly port: number;
     private readonly playgroundPath: string;
 
-    constructor(port?: number) {
-        this.port = port ?? Math.floor(Math.random() * (65535 - 3000) + 3000);
+    constructor(private readonly port = 0) {
         this.playgroundPath = path.join(__dirname, "playground");
     }
 
     async start(): Promise<string> {
         this.server = await launchServer(this.port, this.playgroundPath);
-        return `http://localhost:${this.port}`;
+        const { port } = this.server.address() as AddressInfo;
+        return `http://localhost:${port}`;
     }
 
     async stop(): Promise<void> {

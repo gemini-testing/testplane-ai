@@ -1,52 +1,10 @@
-import { readResultsFromReport } from "html-reporter/experimental/sdk";
 import type { WdioBrowser } from "testplane";
-import { downloadReportIfNeeded } from "../../utils/html-report.js";
 import { launchBrowserWithOptions } from "../launch-browser.js";
 import { resolveViewportSizeAt, type TimeTravelArchive } from "./rrweb-snapshots.js";
-import {
-    findReportTestResult,
-    getReportDefaultTime,
-    getSnapshotAttachment,
-    resolveSnapshotAttachmentSource,
-} from "./report.js";
 import { startTimeTravelRenderServer, type TimeTravelRenderServer } from "./render-server.js";
-import type { SnapshotInputSelection, SelectedSnapshotTime } from "./types.js";
+import type { SelectedSnapshotTime } from "./types.js";
 
 const RENDER_TIMEOUT_MS = 15_000;
-
-interface TimeTravelInputArgs {
-    report?: string;
-    name?: string;
-    browser?: string;
-    attempt?: number;
-    snapshotFile?: string;
-}
-
-export async function getSnapshotInput(args: TimeTravelInputArgs): Promise<SnapshotInputSelection> {
-    if (args.snapshotFile) {
-        return {
-            mode: "direct",
-            source: args.snapshotFile,
-        };
-    }
-
-    const reportPath = await downloadReportIfNeeded(args.report!);
-    const results = await readResultsFromReport(reportPath);
-    const result = findReportTestResult(results, {
-        name: args.name!,
-        browser: args.browser!,
-        attempt: args.attempt,
-    });
-    const attachment = getSnapshotAttachment(result);
-    const source = await resolveSnapshotAttachmentSource(args.report!, reportPath, attachment.path);
-
-    return {
-        mode: "report",
-        source,
-        result,
-        defaultTime: getReportDefaultTime(result),
-    };
-}
 
 function getWindowSize(
     archive: TimeTravelArchive,

@@ -7,6 +7,7 @@ import { RequestHandler } from "../../src/daemon/request-handler.js";
 const mockedTools = vi.hoisted(() => {
     const launchBrowserWithOptions = vi.fn();
     const navigateCb = vi.fn();
+    const launchCb = vi.fn();
     const clickCb = vi.fn();
     const snapshotCb = vi.fn();
     const runCodeCb = vi.fn();
@@ -14,6 +15,7 @@ const mockedTools = vi.hoisted(() => {
     return {
         launchBrowserWithOptions,
         navigateCb,
+        launchCb,
         clickCb,
         snapshotCb,
         runCodeCb,
@@ -32,6 +34,12 @@ vi.mock("@testplane/tools", () => {
         ToolKind,
         launchBrowserWithOptions: mockedTools.launchBrowserWithOptions,
         tools: [
+            {
+                kind: ToolKind.SessionOpen,
+                name: "launch",
+                schema: {},
+                cb: mockedTools.launchCb,
+            },
             {
                 kind: ToolKind.Action,
                 autoLaunchBrowser: true,
@@ -129,6 +137,25 @@ describe("daemon/RequestHandler", () => {
         if (response.kind === "result") {
             expect(response.isError).toBe(false);
         }
+    });
+
+    it("closes the first browser before a concurrent launch opens its replacement", async () => {
+        const replacement = createBrowser();
+        const response = { content: [{ type: "text", text: "ok" }], isError: false };
+        mockedTools.launchCb
+            .mockResolvedValueOnce({ browser, options: {}, response })
+            .mockImplementationOnce(async () => {
+                expect(browser.deleteSession).toHaveBeenCalledTimes(1);
+                return { browser: replacement, options: {}, response };
+            });
+
+        const results = await Promise.all([
+            handler.handleRequest(createRequest("launch"), sessions),
+            handler.handleRequest(createRequest("launch"), sessions),
+        ]);
+
+        expect(results.map(result => result.kind === "result" && result.isError === false)).toEqual([true, true]);
+        expect(sessions.getOrCreate("default").browser).toBe(replacement);
     });
 
     it("returns a clear error for unsupported action tools in REPL sessions", async () => {
